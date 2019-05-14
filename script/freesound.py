@@ -315,8 +315,8 @@ def train_model(x_train, y_train, train_transforms):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     valid_loader = DataLoader(valid_dataset, batch_size=test_batch_size, shuffle=False)
 
-    model = Classifier(num_classes=num_classes)
-    criterion = nn.BCEWithLogitsLoss()
+    model = Classifier(num_classes=num_classes).cuda()
+    criterion = nn.BCEWithLogitsLoss().cuda()
     optimizer = Adam(params=model.parameters(), lr=lr, amsgrad=False)
     scheduler = CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
 
@@ -330,8 +330,8 @@ def train_model(x_train, y_train, train_transforms):
         avg_loss = 0.
 
         for x_batch, y_batch in progress_bar(train_loader, parent=mb):
-            preds = model(x_batch)
-            loss = criterion(preds, y_batch)
+            preds = model(x_batch.cuda())
+            loss = criterion(preds, y_batch.cuda())
 
             optimizer.zero_grad()
             loss.backward()
@@ -345,7 +345,7 @@ def train_model(x_train, y_train, train_transforms):
 
         for i, (x_batch, y_batch) in enumerate(valid_loader):
             preds = model(x_batch).detach()
-            loss = criterion(preds, y_batch)
+            loss = criterion(preds, y_batch.cuda())
 
             preds = torch.sigmoid(preds)
             valid_preds[i * test_batch_size: (i + 1) * test_batch_size] = preds.cpu().numpy()
