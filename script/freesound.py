@@ -238,12 +238,14 @@ class ConvBlock(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
+            nn.PReLU(),
+            nn.MaxPool2d(),
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, 3, 1, 1),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
+            nn.PReLU(),
+            nn.MaxPool2d(),
         )
 
         self._init_weights()
