@@ -123,9 +123,10 @@ def calculate_per_class_lwlrap(truth, scores):
     #                = np.sum(per_class_lwlrap * weight_per_class)
     return per_class_lwlrap, weight_per_class
 
+
 # データを取得
-dataset_dir = Path('../input/given')
-preprocessed_dir = Path('../input/pre')
+dataset_dir = Path('../input/Freesound Audio Tagging 2019')
+preprocessed_dir = Path('../input/FAT2019 Preprocessed Mel-spectrogram Dataset')
 
 csvs = {
     'train_curated': dataset_dir / 'train_curated.csv',
