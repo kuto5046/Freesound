@@ -3,7 +3,7 @@ import os
 import pickle
 import random
 import time
-from collections import Counter, defaultdict
+import requests
 from functools import partial
 from pathlib import Path
 from psutil import cpu_count
@@ -11,9 +11,9 @@ from psutil import cpu_count
 import librosa
 import numpy as np
 import pandas as pd
+
 from PIL import Image
 from sklearn.model_selection import train_test_split
-# from skmultilearn.model_selection import iterative_train_test_split
 
 import torch
 import torch.nn as nn
@@ -24,7 +24,17 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 
-# 全てのseedをまとめて設定
+torch.cuda.is_available()
+
+def send_line_notification(message):
+    line_token = '7iwAOzcAQA3UhHuNJsy9DsPun0Z2GR6ya26lgkbz7pg'  # 終わったら無効化する
+    endpoint = 'https://notify-api.line.me/api/notify'
+    message = "\n{}".format(message)
+    payload = {'message': message}
+    headers = {'Authorization': 'Bearer {}'.format(line_token)}
+    requests.post(endpoint, data=payload, headers=headers)
+
+
 def seed_everything(seed):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -32,6 +42,7 @@ def seed_everything(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
+
 
 SEED = 2019
 seed_everything(SEED)
@@ -125,8 +136,8 @@ def calculate_per_class_lwlrap(truth, scores):
 
 
 # データを取得
-dataset_dir = Path('../input/Freesound Audio Tagging 2019')
-preprocessed_dir = Path('../input/FAT2019 Preprocessed Mel-spectrogram Dataset')
+dataset_dir = Path('../input/freesound-audio-tagging-2019')
+preprocessed_dir = Path('../input/fat2019_prep_mels1')
 
 csvs = {
     'train_curated': dataset_dir / 'train_curated.csv',
@@ -150,8 +161,10 @@ train_curated = pd.read_csv(csvs['train_curated'])
 train_noisy = pd.read_csv(csvs['train_noisy'])
 train_df = pd.concat([train_curated, train_noisy], sort=True, ignore_index=True)
 test_df = pd.read_csv(csvs['sample_submission'])
+
 labels = test_df.columns[1:].tolist()
 num_classes = len(labels)
+
 y_train = np.zeros((len(train_df), num_classes)).astype(int)
 
 # 複数ラベルのサンプルを分解してone-hotエンコーディング化
@@ -239,14 +252,12 @@ class ConvBlock(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1),
             nn.BatchNorm2d(out_channels),
-            nn.ELU(),
-            # nn.MaxPool2d(),
+            nn.ReLU(),
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, 3, 1, 1),
             nn.BatchNorm2d(out_channels),
-            nn.ELU(),
-            # nn.MaxPool2d(),
+            nn.ReLU(),
         )
 
         self._init_weights()
@@ -263,6 +274,7 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
+        x = F.avg_pool2d(x, 2)
         x = self.conv2(x)
         x = F.avg_pool2d(x, 2)
         return x
@@ -282,7 +294,7 @@ class Classifier(nn.Module):
         self.fc = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(512, 128),
-            nn.PReLU(),
+            nn.ReLU(),
             nn.BatchNorm1d(128),
             nn.Dropout(0.1),
             nn.Linear(128, num_classes),
@@ -294,6 +306,7 @@ class Classifier(nn.Module):
         x, _ = torch.max(x, dim=2)
         x = self.fc(x)
         return x
+
 
 Classifier(num_classes=num_classes)
 
@@ -345,7 +358,7 @@ def train_model(x_train, y_train, train_transforms):
         avg_val_loss = 0.
 
         for i, (x_batch, y_batch) in enumerate(valid_loader):
-            preds = model(x_batch).detach()
+            preds = model(x_batch.cuda()).detach()
             loss = criterion(preds, y_batch.cuda())
 
             preds = torch.sigmoid(preds)
