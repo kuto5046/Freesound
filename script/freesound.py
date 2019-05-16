@@ -3,10 +3,12 @@ import os
 import pickle
 import random
 import time
+import logging
 import requests
 from functools import partial
 from pathlib import Path
 from psutil import cpu_count
+from contextlib import contextmanager
 
 import librosa
 import numpy as np
@@ -25,6 +27,19 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 
 torch.cuda.is_available()
+
+
+
+
+
+@contextmanager
+def timer(name, logger=None, level=logging.DEBUG):
+    print_ = print if logger is None else lambda msg: logger.log(level, msg)
+    t0 = time.time()
+    print_(f'[{name}] start')
+    yield
+    print_(f'[{name}] done in {time.time() - t0:.0f} s')
+
 
 def send_line_notification(message):
     line_token = '7iwAOzcAQA3UhHuNJsy9DsPun0Z2GR6ya26lgkbz7pg'  # 終わったら無効化する
@@ -136,52 +151,53 @@ def calculate_per_class_lwlrap(truth, scores):
 
 
 # データを取得
-dataset_dir = Path('../input/freesound-audio-tagging-2019')
-preprocessed_dir = Path('../input/fat2019_prep_mels1')
+with timer('Getting data'):
+    dataset_dir = Path('../input/freesound-audio-tagging-2019')
+    preprocessed_dir = Path('../input/fat2019_prep_mels1')
 
-csvs = {
-    'train_curated': dataset_dir / 'train_curated.csv',
-    'train_noisy': preprocessed_dir / 'trn_noisy_best50s.csv',
-    'sample_submission': dataset_dir / 'sample_submission.csv',
-}
+    csvs = {
+        'train_curated': dataset_dir / 'train_curated.csv',
+        'train_noisy': preprocessed_dir / 'trn_noisy_best50s.csv',
+        'sample_submission': dataset_dir / 'sample_submission.csv',
+    }
 
-dataset = {
-    'train_curated': dataset_dir / 'train_curated',
-    'train_noisy': dataset_dir / 'train_noisy',
-    'test': dataset_dir / 'test',
-}
+    dataset = {
+        'train_curated': dataset_dir / 'train_curated',
+        'train_noisy': dataset_dir / 'train_noisy',
+        'test': dataset_dir / 'test',
+    }
 
-mels = {
-    'train_curated': preprocessed_dir / 'mels_train_curated.pkl',
-    'train_noisy': preprocessed_dir / 'mels_trn_noisy_best50s.pkl',
-    'test': preprocessed_dir / 'mels_test.pkl',
-}
+    mels = {
+        'train_curated': preprocessed_dir / 'mels_train_curated.pkl',
+        'train_noisy': preprocessed_dir / 'mels_trn_noisy_best50s.pkl',
+        'test': preprocessed_dir / 'mels_test.pkl',
+    }
 
-train_curated = pd.read_csv(csvs['train_curated'])
-train_noisy = pd.read_csv(csvs['train_noisy'])
-train_df = pd.concat([train_curated, train_noisy], sort=True, ignore_index=True)
-test_df = pd.read_csv(csvs['sample_submission'])
+    train_curated = pd.read_csv(csvs['train_curated'])
+    train_noisy = pd.read_csv(csvs['train_noisy'])
+    train_df = pd.concat([train_curated, train_noisy], sort=True, ignore_index=True)
+    test_df = pd.read_csv(csvs['sample_submission'])
 
-labels = test_df.columns[1:].tolist()
-num_classes = len(labels)
+    labels = test_df.columns[1:].tolist()
+    num_classes = len(labels)
 
-y_train = np.zeros((len(train_df), num_classes)).astype(int)
+    y_train = np.zeros((len(train_df), num_classes)).astype(int)
 
-# 複数ラベルのサンプルを分解してone-hotエンコーディング化
-for i, row in enumerate(train_df['labels'].str.split(',')):
-    for label in row:
-        idx = labels.index(label)
-        y_train[i, idx] = 1
+    # 複数ラベルのサンプルを分解してone-hotエンコーディング化
+    for i, row in enumerate(train_df['labels'].str.split(',')):
+        for label in row:
+            idx = labels.index(label)
+            y_train[i, idx] = 1
 
-with open(mels['train_curated'], 'rb') as curated, open(mels['train_noisy'], 'rb') as noisy:
-    x_train = pickle.load(curated)
-    x_train.extend(pickle.load(noisy))
+    with open(mels['train_curated'], 'rb') as curated, open(mels['train_noisy'], 'rb') as noisy:
+        x_train = pickle.load(curated)
+        x_train.extend(pickle.load(noisy))
 
-with open(mels['test'], 'rb') as test:
-    x_test = pickle.load(test)
+    with open(mels['test'], 'rb') as test:
+        x_test = pickle.load(test)
 
-# y_trainはgivenデータによる訓練データ
-# x_trainはpreデータによる訓練データ
+    # y_trainはgivenデータによる訓練データ
+    # x_trainはpreデータによる訓練データ
 
 
 class FATTrainDataset(Dataset):
@@ -232,17 +248,17 @@ class FATTestDataset(Dataset):
 
         return image, fname
 
-
-transforms_dict = {
-    'train': transforms.Compose([
-        transforms.RandomHorizontalFlip(0.5),
-        transforms.ToTensor(),
-    ]),
-    'test': transforms.Compose([
-        transforms.RandomHorizontalFlip(0.5),
-        transforms.ToTensor(),
-    ]),
-}
+with timer('Transform'):
+    transforms_dict = {
+        'train': transforms.Compose([
+            transforms.RandomHorizontalFlip(0.5),
+            transforms.ToTensor(),
+        ]),
+        'test': transforms.Compose([
+            transforms.RandomHorizontalFlip(0.5),
+            transforms.ToTensor(),
+        ]),
+    }
 
 
 class ConvBlock(nn.Module):
@@ -308,7 +324,8 @@ class Classifier(nn.Module):
         return x
 
 
-Classifier(num_classes=num_classes)
+with timer('Make classifier'):
+    Classifier(num_classes=num_classes)
 
 
 def train_model(x_train, y_train, train_transforms):
