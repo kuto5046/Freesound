@@ -29,9 +29,6 @@ from torchvision.transforms import transforms
 torch.cuda.is_available()
 
 
-
-
-
 @contextmanager
 def timer(name, logger=None, level=logging.DEBUG):
     print_ = print if logger is None else lambda msg: logger.log(level, msg)
@@ -41,12 +38,12 @@ def timer(name, logger=None, level=logging.DEBUG):
     print_(f'[{name}] done in {time.time() - t0:.0f} s')
 
 
-def send_line_notification(message):
-    line_token = '7iwAOzcAQA3UhHuNJsy9DsPun0Z2GR6ya26lgkbz7pg'  # 終わったら無効化する
+def line_notify(message):
+    line_token = 'RfawizEFmL6UmdxmOiXj9PUjUHNDuHvA67gbq1ir57Q'  # 終わったら無効化する
     endpoint = 'https://notify-api.line.me/api/notify'
-    message = "\n{}".format(message)
+    # message = "\n{}".format(message)
     payload = {'message': message}
-    headers = {'Authorization': 'Bearer {}'.format(line_token)}
+    headers = {'Authorization': 'Bearer' + line_token}
     requests.post(endpoint, data=payload, headers=headers)
 
 
@@ -154,10 +151,10 @@ def calculate_per_class_lwlrap(truth, scores):
 with timer('Getting data'):
     dataset_dir = Path('../input/freesound-audio-tagging-2019')
     preprocessed_dir = Path('../input/fat2019_prep_mels1')
-
+    original_dir = Path('../input/mels-best100s')
     csvs = {
         'train_curated': dataset_dir / 'train_curated.csv',
-        'train_noisy': preprocessed_dir / 'trn_noisy_best50s.csv',
+        'train_noisy': original_dir / 'trn_noisy_best100s.csv',
         'sample_submission': dataset_dir / 'sample_submission.csv',
     }
 
@@ -169,7 +166,7 @@ with timer('Getting data'):
 
     mels = {
         'train_curated': preprocessed_dir / 'mels_train_curated.pkl',
-        'train_noisy': preprocessed_dir / 'mels_trn_noisy_best50s.pkl',
+        'train_noisy': original_dir / 'mels_trn_noisy_best100s.pkl',
         'test': preprocessed_dir / 'mels_test.pkl',
     }
 
@@ -290,7 +287,6 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
-        x = F.avg_pool2d(x, 2)
         x = self.conv2(x)
         x = F.avg_pool2d(x, 2)
         return x
@@ -403,8 +399,8 @@ def train_model(x_train, y_train, train_transforms):
         'best_lwlrap': best_lwlrap,
     }
 
-
-result = train_model(x_train, y_train, transforms_dict['train'])
+with timer('training model'):
+    result = train_model(x_train, y_train, transforms_dict['train'])
 
 
 def predict_model(test_fnames, x_test, test_transforms, num_classes, *, tta=5):
@@ -434,6 +430,9 @@ def predict_model(test_fnames, x_test, test_transforms, num_classes, *, tta=5):
     return test_preds
 
 
-test_preds = predict_model(test_df['fname'], x_test, transforms_dict['test'], num_classes, tta=20)
-test_df[labels] = test_preds.values
-test_df.to_csv('submission.csv', index=False)
+with timer('predict model'):
+    test_preds = predict_model(test_df['fname'], x_test, transforms_dict['test'], num_classes, tta=20)
+    test_df[labels] = test_preds.values
+    test_df.to_csv('submission.csv', index=False)
+
+line_notify('finish kernel')
